@@ -381,22 +381,22 @@ load();
 </script>"""
 
 
-@app.get("/sync")
+@app.get("/sync", response_class=HTMLResponse)
 async def sync(request: Request):
     cookie_pin = request.cookies.get(AUTH_COOKIE)
     if not check_auth(cookie_pin):
-        return {"error": "Not authenticated", "login": "/login"}
+        return RedirectResponse("/login", status_code=303)
 
     session = get_session()
     if not session:
-        return {"error": "Not authenticated", "setup": "/"}
+        return HTMLResponse("<h1>Not connected</h1><p><a href='/'>Connect to Tidal first</a></p>")
 
     config = get_config()
     selected = config.get("selected_mixes", [])
     retention = config.get("retention_days", 7)
 
     if not selected:
-        return {"error": "No mixes selected", "config": "/config"}
+        return HTMLResponse("<h1>No mixes selected</h1><p><a href='/config'>Configure mixes first</a></p>")
 
     # Get mixes
     all_mixes = {}
@@ -447,10 +447,44 @@ async def sync(request: Request):
                         deleted.append(name)
                 except ValueError:
                     pass
-    except Exception as e:
+    except Exception:
         pass
 
-    return {"success": True, "synced": results, "deleted": deleted}
+    # Build HTML response
+    html = "<h1>Sync Complete</h1>"
+
+    # Show synced playlists
+    created = [r for r in results if r.get("success")]
+    skipped = [r for r in results if r.get("skipped")]
+    errors = [r for r in results if r.get("error")]
+
+    if created:
+        html += "<h2>Created</h2><ul>"
+        for r in created:
+            html += f"<li><strong>{r['playlist']}</strong> ({r['tracks']} tracks)</li>"
+        html += "</ul>"
+
+    if skipped:
+        html += "<h2>Skipped (already exist)</h2><ul>"
+        for r in skipped:
+            html += f"<li>{r['playlist']}</li>"
+        html += "</ul>"
+
+    if errors:
+        html += "<h2 style='color:red'>Errors</h2><ul>"
+        for r in errors:
+            html += f"<li>{r.get('mix', r.get('mix_id', 'Unknown'))}: {r['error']}</li>"
+        html += "</ul>"
+
+    if deleted:
+        html += f"<h2>Cleaned up</h2><p>Deleted {len(deleted)} old playlist(s)</p>"
+
+    if not created and not skipped and not errors:
+        html += "<p>Nothing to sync.</p>"
+
+    html += "<p style='margin-top:20px'><a href='/'>← Back to home</a></p>"
+
+    return HTMLResponse(html)
 
 
 if __name__ == "__main__":
