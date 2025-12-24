@@ -6,8 +6,8 @@ import tidalapi
 from tidalapi.session import LinkLogin
 from datetime import date, timedelta
 from pathlib import Path
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, Cookie
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 app = FastAPI()
 
@@ -17,6 +17,9 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 TOKENS_FILE = DATA_DIR / "tokens.json"
 PENDING_FILE = DATA_DIR / "pending.json"
 CONFIG_FILE = DATA_DIR / "config.json"
+PIN_FILE = DATA_DIR / "pin.json"
+
+AUTH_COOKIE = "tidal_sync_pin"
 
 DEFAULT_CONFIG = {
     "selected_mixes": [],
@@ -32,6 +35,19 @@ def save_json(path, data):
 
 def get_config():
     return load_json(CONFIG_FILE) or DEFAULT_CONFIG.copy()
+
+def get_pin():
+    data = load_json(PIN_FILE)
+    return data.get("pin") if data else None
+
+def set_pin(pin):
+    save_json(PIN_FILE, {"pin": pin})
+
+def check_auth(cookie_pin: str = None) -> bool:
+    stored_pin = get_pin()
+    if not stored_pin:
+        return True  # No PIN set yet
+    return cookie_pin == stored_pin
 
 def get_session():
     tokens = load_json(TOKENS_FILE)
@@ -54,8 +70,73 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/check_auth")
-async def check_auth():
+@app.get("/debug/storage")
+async def debug_storage():
+    """Check if persistent storage is working."""
+    return {
+        "data_dir": str(DATA_DIR),
+        "data_dir_exists": DATA_DIR.exists(),
+        "pin_file_exists": PIN_FILE.exists(),
+        "tokens_file_exists": TOKENS_FILE.exists(),
+        "config_file_exists": CONFIG_FILE.exists(),
+        "files_in_data_dir": [f.name for f in DATA_DIR.iterdir()] if DATA_DIR.exists() else [],
+    }
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(error: str = None):
+    stored_pin = get_pin()
+    if not stored_pin:
+        # First time - set PIN
+        return """<h1>Tidal Mix Sync - Setup</h1>
+<p>Set a PIN to protect your instance:</p>
+<form method="POST" action="/login">
+<p><input type="password" name="pin" placeholder="Choose a PIN" required autofocus style="font-size:18px;padding:8px"></p>
+<p><button type="submit" style="font-size:18px;padding:8px 16px">Set PIN</button></p>
+</form>"""
+
+    error_msg = "<p style='color:red'>Wrong PIN</p>" if error else ""
+    return f"""<h1>Tidal Mix Sync</h1>
+{error_msg}
+<form method="POST" action="/login">
+<p><input type="password" name="pin" placeholder="Enter PIN" required autofocus style="font-size:18px;padding:8px"></p>
+<p><button type="submit" style="font-size:18px;padding:8px 16px">Login</button></p>
+</form>"""
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    form = await request.form()
+    pin = form.get("pin", "").strip()
+
+    if not pin:
+        return RedirectResponse("/login?error=1", status_code=303)
+
+    stored_pin = get_pin()
+    if not stored_pin:
+        # First time - save PIN
+        set_pin(pin)
+        response = RedirectResponse("/", status_code=303)
+        response.set_cookie(AUTH_COOKIE, pin, httponly=True, max_age=86400*365)
+        return response
+
+    if pin == stored_pin:
+        response = RedirectResponse("/", status_code=303)
+        response.set_cookie(AUTH_COOKIE, pin, httponly=True, max_age=86400*365)
+        return response
+
+    return RedirectResponse("/login?error=1", status_code=303)
+
+
+def auth_required(cookie_pin: str = Cookie(None, alias=AUTH_COOKIE)):
+    """Check if auth is required and redirect if not authenticated."""
+    if not check_auth(cookie_pin):
+        return RedirectResponse("/login", status_code=303)
+    return None
+
+
+@app.get("/check_tidal_auth")
+async def check_tidal_auth():
     pending = load_json(PENDING_FILE)
     if not pending:
         return {"error": True, "message": "No pending authorization"}
@@ -81,16 +162,27 @@ async def check_auth():
             })
             PENDING_FILE.unlink(missing_ok=True)
             return {"success": True, "message": "Authorization complete!"}
+        return {"pending": True, "message": "Login check failed after token processing"}
     except Exception as e:
-        if "expired" in str(e).lower():
+        err_str = str(e).lower()
+        if "expired" in err_str:
             PENDING_FILE.unlink(missing_ok=True)
             return {"expired": True, "message": "Authorization expired, refresh to try again"}
-        return {"pending": True, "message": "Waiting for authorization..."}
-    return {"pending": True, "message": "Waiting for authorization..."}
+        if "pending" in err_str or "authorization_pending" in err_str:
+            return {"pending": True, "message": "Waiting for authorization..."}
+        # Return actual error for debugging
+        return {"error": True, "message": f"Auth error: {e}"}
 
 
 @app.get("/", response_class=HTMLResponse)
-async def home():
+async def home(request: Request):
+    # Always require PIN setup/login first
+    stored_pin = get_pin()
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+
+    if not stored_pin or cookie_pin != stored_pin:
+        return RedirectResponse("/login", status_code=303)
+
     session = get_session()
     if session:
         config = get_config()
@@ -110,9 +202,10 @@ async def home():
         return f"""<h1>Waiting for Tidal Authorization</h1>
 <p id="status">Checking...</p>
 <p><a href='https://{pending['verification_uri_complete']}' target='_blank'>Click here if you haven't authorized yet</a></p>
+<p><a href='/reset_auth'>Start over</a> (if authorization expired)</p>
 <script>
 async function check() {{
-    const r = await fetch('/check_auth');
+    const r = await fetch('/check_tidal_auth');
     const d = await r.json();
     document.getElementById('status').innerText = d.message;
     if (d.success) location.href = '/';
@@ -139,24 +232,43 @@ check(); setInterval(check, 3000);
 <p id="status" style="color: #666;">Waiting...</p>
 <script>
 async function check() {{
-    const r = await fetch('/check_auth');
+    const r = await fetch('/check_tidal_auth');
     const d = await r.json();
+    document.getElementById('status').innerText = d.message;
+    if (d.error) document.getElementById('status').style.color = 'red';
     if (d.success) location.href = '/';
-    else if (d.pending) document.getElementById('status').innerText = d.message;
+    else if (d.expired) location.href = '/';
 }}
 setTimeout(() => {{ check(); setInterval(check, 3000); }}, 5000);
 </script>"""
 
 
 @app.get("/logout")
-async def logout():
+async def logout(request: Request):
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+    if not check_auth(cookie_pin):
+        return RedirectResponse("/login", status_code=303)
     TOKENS_FILE.unlink(missing_ok=True)
     PENDING_FILE.unlink(missing_ok=True)
     return HTMLResponse("<h1>Disconnected</h1><p><a href='/'>Connect again</a></p>")
 
 
+@app.get("/reset_auth")
+async def reset_auth(request: Request):
+    """Clear pending auth and start fresh."""
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+    if not check_auth(cookie_pin):
+        return RedirectResponse("/login", status_code=303)
+    PENDING_FILE.unlink(missing_ok=True)
+    return RedirectResponse("/", status_code=303)
+
+
 @app.get("/api/mixes")
-async def get_mixes():
+async def get_mixes(request: Request):
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+    if not check_auth(cookie_pin):
+        return {"error": "Not authenticated"}
+
     session = get_session()
     if not session:
         return {"error": "Not authenticated"}
@@ -166,21 +278,30 @@ async def get_mixes():
         if hasattr(category, "items"):
             for item in category.items:
                 if hasattr(item, "id"):
+                    title = getattr(item, "title", "Unknown")
                     mixes.append({
                         "id": item.id,
-                        "title": getattr(item, "title", "Unknown"),
+                        "title": title,
                         "sub_title": getattr(item, "sub_title", ""),
+                        "is_daily": "daily" in title.lower(),
                     })
     return {"mixes": mixes}
 
 
 @app.get("/api/config")
-async def get_config_api():
+async def get_config_api(request: Request):
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+    if not check_auth(cookie_pin):
+        return {"error": "Not authenticated"}
     return get_config()
 
 
 @app.post("/api/config")
 async def save_config_api(request: Request):
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+    if not check_auth(cookie_pin):
+        return {"error": "Not authenticated"}
+
     data = await request.json()
     config = get_config()
     if "selected_mixes" in data:
@@ -192,7 +313,11 @@ async def save_config_api(request: Request):
 
 
 @app.get("/config", response_class=HTMLResponse)
-async def config_page():
+async def config_page(request: Request):
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+    if not check_auth(cookie_pin):
+        return RedirectResponse("/login", status_code=303)
+
     if not get_session():
         return HTMLResponse("<h1>Not connected</h1><p><a href='/'>Connect first</a></p>")
 
@@ -212,8 +337,15 @@ let mixes=[], config={};
 async function load() {
     const [m,c] = await Promise.all([fetch('/api/mixes').then(r=>r.json()), fetch('/api/config').then(r=>r.json())]);
     mixes = m.mixes || []; config = c;
+
+    // Default: select "daily" mixes if nothing selected yet
+    let selected = config.selected_mixes || [];
+    if (selected.length === 0) {
+        selected = mixes.filter(m => m.is_daily).map(m => m.id);
+    }
+
     document.getElementById('mixes').innerHTML = mixes.map(m =>
-        '<label style="display:block;margin:8px 0"><input type="checkbox" value="'+m.id+'" '+(config.selected_mixes?.includes(m.id)?'checked':'')+'> <strong>'+m.title+'</strong> '+(m.sub_title||'')+'</label>'
+        '<label style="display:block;margin:8px 0"><input type="checkbox" value="'+m.id+'" '+(selected.includes(m.id)?'checked':'')+'> <strong>'+m.title+'</strong> '+(m.sub_title||'')+'</label>'
     ).join('');
     document.getElementById('retention').value = config.retention_days || 7;
     document.getElementById('loading').style.display = 'none';
@@ -232,7 +364,11 @@ load();
 
 
 @app.get("/sync")
-async def sync():
+async def sync(request: Request):
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+    if not check_auth(cookie_pin):
+        return {"error": "Not authenticated", "login": "/login"}
+
     session = get_session()
     if not session:
         return {"error": "Not authenticated", "setup": "/"}
@@ -255,15 +391,23 @@ async def sync():
     results = []
     today = date.today().isoformat()
 
+    # Get existing playlists to avoid duplicates
+    existing_names = {pl.name for pl in session.user.playlists()}
+
     for mix_id in selected:
         mix = all_mixes.get(mix_id)
         if not mix:
             results.append({"mix_id": mix_id, "error": "Not found"})
             continue
         try:
-            tracks = mix.items()
             title = getattr(mix, "title", "Mix")
             name = f"{today} {title}"
+
+            if name in existing_names:
+                results.append({"mix": title, "playlist": name, "skipped": "Already exists"})
+                continue
+
+            tracks = mix.items()
             playlist = session.user.create_playlist(name, f"Auto-synced from Tidal")
             playlist.add([t.id for t in tracks])
             session.user.favorites.add_playlist(playlist.id)
