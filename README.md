@@ -36,10 +36,16 @@ A **self-service tool** for non-technical users:
 ## Setup
 
 1. Click "Deploy on Railway" above
-2. Visit your app URL
-3. Click the Tidal login link and authenticate
-4. Page auto-detects when you're done
-5. Done! Sync runs daily.
+2. Wait for deployment to complete
+3. Find your app URL:
+   - Click on the **tidal-dd** service in the left panel
+   - Go to **Settings** → **Networking**
+   - Copy the public URL (e.g., `xxx.up.railway.app`)
+4. Visit your app URL
+5. Set a PIN to protect your instance
+6. Click the Tidal login link and authenticate
+7. Select which mixes to sync (Daily Discovery is selected by default)
+8. Done! Sync runs daily at 10am UTC.
 
 ## Manual Sync
 
