@@ -47,6 +47,14 @@ A **self-service tool** for non-technical users:
 7. Select which mixes to sync (Daily Discovery is selected by default)
 8. Done! Sync runs daily at 10am UTC.
 
+## Updating
+
+To get the latest version:
+1. Click on your **tidal-dd** service
+2. Go to **Settings** → scroll to **Source**
+3. Click **Check for updates** under "Upstream Repo"
+4. If updates are available, Railway will redeploy automatically
+
 ## Manual Sync
 
 Visit `/sync` to trigger a sync manually.
