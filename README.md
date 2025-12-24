@@ -27,13 +27,11 @@ A **self-service tool** for non-technical users:
 
 ## Deploy
 
+### Option 1: Railway (easiest)
+
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.com/deploy/stunning-inspiration)
 
 **Cost:** ~$1/month on Railway (Hobby plan)
-
-> **Note:** After deploying, Railway will automatically create a persistent volume for your data.
-
-## Setup
 
 1. Click "Deploy on Railway" above
 2. Wait for deployment to complete
@@ -41,19 +39,40 @@ A **self-service tool** for non-technical users:
    - Click on the **tidal-dd** service in the left panel
    - Go to **Settings** → **Networking**
    - Copy the public URL (e.g., `xxx.up.railway.app`)
-4. Visit your app URL
-5. Set a PIN to protect your instance
-6. Click the Tidal login link and authenticate
-7. Select which mixes to sync (Daily Discovery is selected by default)
-8. Done! Sync runs daily at 10am UTC.
+4. Visit your app URL and follow the setup wizard
 
-## Updating
+**Updating Railway:** Click on your service → **Settings** → **Source** → **Check for updates**
 
-To get the latest version:
-1. Click on your **tidal-dd** service
-2. Go to **Settings** → scroll to **Source**
-3. Click **Check for updates** under "Upstream Repo"
-4. If updates are available, Railway will redeploy automatically
+### Option 2: Docker Compose (self-hosted)
+
+```bash
+# Download docker-compose.yml
+curl -O https://raw.githubusercontent.com/muness/tidal-dd/main/docker-compose.yml
+
+# Start the container
+docker compose up -d
+```
+
+Visit `http://localhost:8080` (or your server's IP)
+
+**Updating Docker:**
+```bash
+docker compose pull
+docker compose up -d
+```
+
+**Note:** For daily automatic syncs, set up a cron job to call `/sync`:
+```bash
+0 10 * * * curl -s http://localhost:8080/sync > /dev/null
+```
+
+## Setup
+
+1. Visit your app URL
+2. Set a PIN to protect your instance
+3. Click the Tidal login link and authenticate
+4. Select which mixes to sync (Daily Discovery is selected by default)
+5. Done! (Railway syncs daily at 10am UTC automatically)
 
 ## Manual Sync
 
