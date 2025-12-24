@@ -213,7 +213,8 @@ async def home(request: Request):
 <li><a href="/config">Configure mixes &amp; retention</a></li>
 <li><a href="/sync">Run sync now</a></li>
 <li><a href="/logout">Disconnect Tidal</a></li>
-</ul>"""
+</ul>
+<p style="margin-top:30px;font-size:14px;color:#666;"><a href="https://buymeacoffee.com/muness" target="_blank">Buy me a coffee</a> if you find this useful!</p>"""
 
     pending = load_json(PENDING_FILE)
     if pending:

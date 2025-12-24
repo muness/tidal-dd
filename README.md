@@ -97,3 +97,7 @@ docker build -t tidal-dd . && docker run -p 8080:8080 -v $(pwd)/data:/data tidal
 pip install -r requirements.txt
 DATA_DIR=./data python -m uvicorn app:app --reload
 ```
+
+---
+
+If you find this useful, [buy me a coffee](https://buymeacoffee.com/muness)!
