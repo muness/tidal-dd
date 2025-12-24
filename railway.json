@@ -9,7 +9,7 @@
     "restartPolicyType": "ON_FAILURE"
   },
   "volumes": {
-    "tidal_data": {
+    "tidal_data_v2": {
       "mountPath": "/data"
     }
   }
