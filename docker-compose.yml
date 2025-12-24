@@ -1,0 +1,11 @@
+services:
+  tidal-dd:
+    image: muness/tidal-dd:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - tidal_data:/data
+    restart: unless-stopped
+
+volumes:
+  tidal_data:
