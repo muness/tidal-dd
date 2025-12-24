@@ -27,7 +27,7 @@ A **self-service tool** for non-technical users:
 
 ## Deploy
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template?template=https://github.com/YOUR_USERNAME/tidal-dd2)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.com/deploy/stunning-inspiration)
 
 **Cost:** ~$1/month on Railway (Hobby plan)
 
