@@ -1,0 +1,11 @@
+# Superego
+.superego/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Tidal session (contains OAuth tokens)
+session.json
+.tidal-sessions/
