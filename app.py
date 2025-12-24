@@ -161,6 +161,24 @@ async def check_tidal_auth():
                 "refresh_token": session.refresh_token
             })
             PENDING_FILE.unlink(missing_ok=True)
+
+            # Auto-select daily mixes if no config exists
+            config = get_config()
+            if not config.get("selected_mixes"):
+                try:
+                    daily_ids = []
+                    for cat in session.mixes().categories:
+                        if hasattr(cat, "items"):
+                            for item in cat.items:
+                                title = getattr(item, "title", "")
+                                if "daily" in title.lower() and hasattr(item, "id"):
+                                    daily_ids.append(item.id)
+                    if daily_ids:
+                        config["selected_mixes"] = daily_ids
+                        save_json(CONFIG_FILE, config)
+                except Exception:
+                    pass  # Non-critical, user can configure manually
+
             return {"success": True, "message": "Authorization complete!"}
         return {"pending": True, "message": "Login check failed after token processing"}
     except Exception as e:
