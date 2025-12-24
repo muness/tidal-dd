@@ -112,7 +112,46 @@ def test_create_playlist(session: tidalapi.Session):
     print("Check if it appears in Roon!")
 
 
+def test_reconstructed_link_login():
+    """Test if reconstructing LinkLogin from saved data works."""
+    from tidalapi.session import LinkLogin
+    import json
+
+    session = tidalapi.Session()
+
+    # Start OAuth and get login info
+    print("Starting OAuth...")
+    login_info, future = session.login_oauth()
+    future.cancel()
+
+    # Save the data (simulating what app.py does)
+    saved = {
+        "device_code": login_info.device_code,
+        "user_code": login_info.user_code,
+        "verification_uri": login_info.verification_uri,
+        "verification_uri_complete": login_info.verification_uri_complete
+    }
+    print(f"Device code: {saved['device_code'][:8]}...")
+    print(f"\nAuthorize here: https://{login_info.verification_uri_complete}")
+    input("\nPress Enter AFTER you've authorized in browser...")
+
+    # Test 1: Use ORIGINAL login_info object
+    print("\nTest 1: Polling with ORIGINAL login_info...")
+    try:
+        result = session._check_link_login(login_info, until_expiry=True)
+        print(f"Success! Result: {result}")
+        session.process_auth_token(result)
+        if session.check_login():
+            print(f"Logged in as user {session.user.id}")
+    except Exception as e:
+        print(f"Failed: {type(e).__name__}: {e}")
+
+
 def main():
+    # Test reconstructed LinkLogin flow
+    test_reconstructed_link_login()
+    return
+
     session = login()
     test_create_playlist(session)
 

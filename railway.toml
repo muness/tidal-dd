@@ -3,9 +3,15 @@ builder = "nixpacks"
 
 [deploy]
 startCommand = "uvicorn app:app --host 0.0.0.0 --port $PORT"
-healthcheckPath = "/"
+healthcheckPath = "/health"
 restartPolicyType = "on_failure"
 
+[[mounts]]
+source = "tidal_data_v2"
+destination = "/data"
+
 [service]
-# Cron job to run sync daily at 10am UTC (after Tidal updates)
-# Users can also hit /sync manually
+# Daily sync at 10am UTC
+[[service.cron]]
+schedule = "0 10 * * *"
+endpoint = "/sync"
