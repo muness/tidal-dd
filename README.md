@@ -29,21 +29,17 @@ A **self-service tool** for non-technical users:
 
 ### Option 1: Koyeb (free)
 
+[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=docker&image=muness/tidal-dd:latest&name=tidal-dd&ports=8080;http;/&env[DATA_DIR]=/data)
+
 **Cost:** Free (scales to zero when idle)
 
-1. Go to [Koyeb](https://app.koyeb.com/) and sign up
-2. Click **Create App** → **Docker**
-3. Enter image: `muness/tidal-dd:latest`
-4. Set **Port** to `8080`
-5. Add environment variables:
-   - `DATA_DIR` = `/data`
-   - `CRON_SECRET` = (make up a secret, e.g., `my-secret-key-123`)
-6. Choose **Free** instance type
-7. Pick region: **Frankfurt** or **Washington DC**
-8. Click **Deploy**
+1. Click the button above and sign up/log in to Koyeb
+2. Add an environment variable: `CRON_SECRET` = (make up a secret, e.g., `my-secret-key-123`)
+3. Choose **Free** instance type
+4. Click **Deploy**
 
 **Set up daily sync with cron-job.org (free):**
-1. Go to [cron-job.org](https://cron-job.org/) and create an account
+1. Go to [cron-job.org](https://cron-job.org/) and create a free account
 2. Create a new cron job:
    - URL: `https://YOUR-APP.koyeb.app/cron/sync?key=YOUR_CRON_SECRET`
    - Schedule: Daily at 10:00 (or whenever you prefer)
