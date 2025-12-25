@@ -27,23 +27,20 @@ A **self-service tool** for non-technical users:
 
 ## Deploy
 
-### Option 1: Koyeb (free)
+### Option 1: Koyeb (~$2.68/month)
 
-[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=docker&image=muness/tidal-dd:latest&name=tidal-dd&ports=8080;http;/&env[DATA_DIR]=/data)
+[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=docker&image=muness/tidal-dd:latest&name=tidal-dd&instance_type=eco-nano&ports=8080;http;/&env[DATA_DIR]=/data)
 
-**Cost:** Free (scales to zero when idle)
+**Cost:** ~$2.68/month (eco-nano instance, always on)
 
 1. Click the button above and sign up/log in to Koyeb
-2. Add an environment variable: `CRON_SECRET` = (make up a secret, e.g., `my-secret-key-123`)
-3. Choose **Free** instance type
-4. Click **Deploy**
+2. Before deploying, configure these settings:
+   - **Instance type:** eco-nano (should be pre-selected)
+   - **Scaling:** Set to Fixed, 1 instance
+   - **Volume:** Click "Add Volume", mount path `/data`, size 1GB
+3. Click **Deploy**
 
-**Set up daily sync with cron-job.org (free):**
-1. Go to [cron-job.org](https://cron-job.org/) and create a free account
-2. Create a new cron job:
-   - URL: `https://YOUR-APP.koyeb.app/cron/sync?key=YOUR_CRON_SECRET`
-   - Schedule: Daily at 10:00 (or whenever you prefer)
-3. Save — your mixes will sync daily!
+That's it! The app syncs your mixes daily at 10:00 UTC automatically.
 
 ### Option 2: Railway (~$5/month)
 
