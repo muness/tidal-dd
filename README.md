@@ -45,8 +45,9 @@ A **self-service tool** for non-technical users:
 
 ### Option 2: Docker Compose (self-hosted)
 
+Download [`docker-compose.yml`](https://github.com/muness/tidal-dd/blob/main/docker-compose.yml):
+
 ```bash
-# Download docker-compose.yml
 curl -O https://raw.githubusercontent.com/muness/tidal-dd/main/docker-compose.yml
 
 # Start the container
@@ -67,6 +68,8 @@ docker compose up -d
 ```
 
 ## Setup
+
+**Note:** Safari (especially on iPhone) may not work for Tidal login. Use Chrome on a computer.
 
 1. Visit your app URL
 2. Set a PIN to protect your instance

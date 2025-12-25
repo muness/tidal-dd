@@ -9,9 +9,3 @@ restartPolicyType = "on_failure"
 [[mounts]]
 source = "tidal_data_v2"
 destination = "/data"
-
-[service]
-# Daily sync at 10am UTC
-[[service.cron]]
-schedule = "0 10 * * *"
-endpoint = "/sync"

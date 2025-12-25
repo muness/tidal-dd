@@ -4,12 +4,29 @@ import os
 import json
 import tidalapi
 from tidalapi.session import LinkLogin
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
-app = FastAPI()
+scheduler = BackgroundScheduler()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler.add_job(
+        run_scheduled_sync,
+        CronTrigger(hour=10, minute=0),  # 10:00 UTC daily
+        id="daily_sync",
+        replace_existing=True
+    )
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+app = FastAPI(lifespan=lifespan)
 
 # Persistent storage (Railway/Render volume)
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
@@ -18,6 +35,7 @@ TOKENS_FILE = DATA_DIR / "tokens.json"
 PENDING_FILE = DATA_DIR / "pending.json"
 CONFIG_FILE = DATA_DIR / "config.json"
 PIN_FILE = DATA_DIR / "pin.json"
+SYNC_STATUS_FILE = DATA_DIR / "sync_status.json"
 
 AUTH_COOKIE = "tidal_sync_pin"
 
@@ -63,6 +81,93 @@ def get_session():
             })
         return session
     return None
+
+
+def save_sync_status(trigger: str, results: list, deleted: list, error: str = None):
+    status = {
+        "last_sync": datetime.utcnow().isoformat() + "Z",
+        "trigger": trigger,
+        "results": results,
+        "deleted_count": len(deleted),
+        "error": error,
+    }
+    save_json(SYNC_STATUS_FILE, status)
+
+
+def perform_sync(trigger: str = "manual"):
+    """Core sync logic used by both manual and scheduled sync."""
+    session = get_session()
+    if not session:
+        save_sync_status(trigger, [], [], error="Not connected to Tidal")
+        return {"error": "Not connected to Tidal"}
+
+    config = get_config()
+    selected = config.get("selected_mixes", [])
+    retention = config.get("retention_days", 7)
+
+    if not selected:
+        save_sync_status(trigger, [], [], error="No mixes selected")
+        return {"error": "No mixes selected"}
+
+    # Get mixes
+    all_mixes = {}
+    for cat in session.mixes().categories:
+        if hasattr(cat, "items"):
+            for item in cat.items:
+                if hasattr(item, "id"):
+                    all_mixes[item.id] = item
+
+    results = []
+    today = date.today().isoformat()
+
+    # Get existing playlists to avoid duplicates
+    existing_names = {pl.name for pl in session.user.playlists()}
+
+    for mix_id in selected:
+        mix = all_mixes.get(mix_id)
+        if not mix:
+            results.append({"mix_id": mix_id, "error": "Not found"})
+            continue
+        try:
+            title = getattr(mix, "title", "Mix")
+            name = f"{today} {title}"
+
+            if name in existing_names:
+                results.append({"mix": title, "playlist": name, "skipped": "Already exists"})
+                continue
+
+            tracks = mix.items()
+            playlist = session.user.create_playlist(name, f"Auto-synced from Tidal")
+            playlist.add([t.id for t in tracks])
+            session.user.favorites.add_playlist(playlist.id)
+            results.append({"mix": title, "playlist": name, "tracks": len(tracks), "success": True})
+        except Exception as e:
+            results.append({"mix_id": mix_id, "error": str(e)})
+
+    # Cleanup old playlists
+    cutoff = date.today() - timedelta(days=retention)
+    deleted = []
+    try:
+        for pl in session.user.playlists():
+            name = pl.name
+            if len(name) >= 10 and name[4] == '-' and name[7] == '-':
+                try:
+                    pl_date = date.fromisoformat(name[:10])
+                    if pl_date < cutoff and 'Auto-synced' in (getattr(pl, 'description', '') or ''):
+                        pl.delete()
+                        deleted.append(name)
+                except ValueError:
+                    pass
+    except Exception:
+        pass
+
+    save_sync_status(trigger, results, deleted)
+    return {"results": results, "deleted": deleted}
+
+
+def run_scheduled_sync():
+    """Called by APScheduler for daily sync."""
+    perform_sync(trigger="scheduled")
 
 
 @app.get("/health")
@@ -212,6 +317,7 @@ async def home(request: Request):
 <ul>
 <li><a href="/config">Configure mixes &amp; retention</a></li>
 <li><a href="/sync">Run sync now</a></li>
+<li><a href="/status">Sync status</a></li>
 <li><a href="/logout">Disconnect Tidal</a></li>
 </ul>
 <p style="margin-top:30px;font-size:14px;color:#666;"><a href="https://buymeacoffee.com/muness" target="_blank">Buy me a coffee</a> if you find this useful!</p>"""
@@ -382,79 +488,75 @@ load();
 </script>"""
 
 
+@app.get("/status", response_class=HTMLResponse)
+async def status_page(request: Request):
+    cookie_pin = request.cookies.get(AUTH_COOKIE)
+    if not check_auth(cookie_pin):
+        return RedirectResponse("/login", status_code=303)
+
+    status = load_json(SYNC_STATUS_FILE)
+    next_run = scheduler.get_job("daily_sync")
+    next_run_str = next_run.next_run_time.strftime("%Y-%m-%d %H:%M UTC") if next_run and next_run.next_run_time else "Not scheduled"
+
+    html = "<h1>Sync Status</h1>"
+
+    if not status:
+        html += "<p>No sync has been run yet.</p>"
+    else:
+        html += f"<p><strong>Last sync:</strong> {status['last_sync']}</p>"
+        html += f"<p><strong>Trigger:</strong> {status['trigger']}</p>"
+
+        if status.get("error"):
+            html += f"<p style='color:red'><strong>Error:</strong> {status['error']}</p>"
+        else:
+            results = status.get("results", [])
+            created = [r for r in results if r.get("success")]
+            skipped = [r for r in results if r.get("skipped")]
+            errors = [r for r in results if r.get("error")]
+
+            if created:
+                html += "<h3>Created</h3><ul>"
+                for r in created:
+                    html += f"<li>{r['playlist']} ({r['tracks']} tracks)</li>"
+                html += "</ul>"
+
+            if skipped:
+                html += "<h3>Skipped</h3><ul>"
+                for r in skipped:
+                    html += f"<li>{r['playlist']}</li>"
+                html += "</ul>"
+
+            if errors:
+                html += "<h3 style='color:red'>Errors</h3><ul>"
+                for r in errors:
+                    html += f"<li>{r.get('mix', r.get('mix_id', 'Unknown'))}: {r['error']}</li>"
+                html += "</ul>"
+
+            if status.get("deleted_count", 0) > 0:
+                html += f"<p>Cleaned up {status['deleted_count']} old playlist(s)</p>"
+
+    html += f"<p style='margin-top:20px'><strong>Next scheduled sync:</strong> {next_run_str}</p>"
+    html += "<p><a href='/'>← Back to home</a></p>"
+
+    return HTMLResponse(html)
+
+
 @app.get("/sync", response_class=HTMLResponse)
 async def sync(request: Request):
     cookie_pin = request.cookies.get(AUTH_COOKIE)
     if not check_auth(cookie_pin):
         return RedirectResponse("/login", status_code=303)
 
-    session = get_session()
-    if not session:
-        return HTMLResponse("<h1>Not connected</h1><p><a href='/'>Connect to Tidal first</a></p>")
+    result = perform_sync(trigger="manual")
 
-    config = get_config()
-    selected = config.get("selected_mixes", [])
-    retention = config.get("retention_days", 7)
+    if result.get("error"):
+        return HTMLResponse(f"<h1>Sync Error</h1><p>{result['error']}</p><p><a href='/'>← Back</a></p>")
 
-    if not selected:
-        return HTMLResponse("<h1>No mixes selected</h1><p><a href='/config'>Configure mixes first</a></p>")
+    results = result.get("results", [])
+    deleted = result.get("deleted", [])
 
-    # Get mixes
-    all_mixes = {}
-    for cat in session.mixes().categories:
-        if hasattr(cat, "items"):
-            for item in cat.items:
-                if hasattr(item, "id"):
-                    all_mixes[item.id] = item
-
-    results = []
-    today = date.today().isoformat()
-
-    # Get existing playlists to avoid duplicates
-    existing_names = {pl.name for pl in session.user.playlists()}
-
-    for mix_id in selected:
-        mix = all_mixes.get(mix_id)
-        if not mix:
-            results.append({"mix_id": mix_id, "error": "Not found"})
-            continue
-        try:
-            title = getattr(mix, "title", "Mix")
-            name = f"{today} {title}"
-
-            if name in existing_names:
-                results.append({"mix": title, "playlist": name, "skipped": "Already exists"})
-                continue
-
-            tracks = mix.items()
-            playlist = session.user.create_playlist(name, f"Auto-synced from Tidal")
-            playlist.add([t.id for t in tracks])
-            session.user.favorites.add_playlist(playlist.id)
-            results.append({"mix": title, "playlist": name, "tracks": len(tracks), "success": True})
-        except Exception as e:
-            results.append({"mix_id": mix_id, "error": str(e)})
-
-    # Cleanup old playlists
-    cutoff = date.today() - timedelta(days=retention)
-    deleted = []
-    try:
-        for pl in session.user.playlists():
-            name = pl.name
-            if len(name) >= 10 and name[4] == '-' and name[7] == '-':
-                try:
-                    pl_date = date.fromisoformat(name[:10])
-                    if pl_date < cutoff and 'Auto-synced' in (getattr(pl, 'description', '') or ''):
-                        pl.delete()
-                        deleted.append(name)
-                except ValueError:
-                    pass
-    except Exception:
-        pass
-
-    # Build HTML response
     html = "<h1>Sync Complete</h1>"
 
-    # Show synced playlists
     created = [r for r in results if r.get("success")]
     skipped = [r for r in results if r.get("skipped")]
     errors = [r for r in results if r.get("error")]
