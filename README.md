@@ -13,7 +13,7 @@ A **self-service tool** for non-technical users:
 - Web UI for Tidal OAuth login
 - **Config UI to select which mixes to sync** (Daily Discovery, My Mix 1-6, etc.)
 - **Retention settings** (how many days to keep old playlists)
-- One-click deploy to Railway (~$1/month)
+- One-click deploy to Railway (~$5/month)
 
 ## Current Status
 
@@ -31,7 +31,7 @@ A **self-service tool** for non-technical users:
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.com/deploy/stunning-inspiration)
 
-**Cost:** ~$1/month on Railway (Hobby plan)
+**Cost:** ~$5/month on Railway (Hobby plan)
 
 1. Click "Deploy on Railway" above
 2. Wait for deployment to complete
