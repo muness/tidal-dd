@@ -13,7 +13,7 @@ A **self-service tool** for non-technical users:
 - Web UI for Tidal OAuth login
 - **Config UI to select which mixes to sync** (Daily Discovery, My Mix 1-6, etc.)
 - **Retention settings** (how many days to keep old playlists)
-- One-click deploy to Railway (~$5/month)
+- Deploy to Koyeb (free) or Railway (~$5/month)
 
 ## Current Status
 
@@ -27,11 +27,33 @@ A **self-service tool** for non-technical users:
 
 ## Deploy
 
-### Option 1: Railway (easiest)
+### Option 1: Koyeb (free)
+
+**Cost:** Free (scales to zero when idle)
+
+1. Go to [Koyeb](https://app.koyeb.com/) and sign up
+2. Click **Create App** → **Docker**
+3. Enter image: `muness/tidal-dd:latest`
+4. Set **Port** to `8080`
+5. Add environment variables:
+   - `DATA_DIR` = `/data`
+   - `CRON_SECRET` = (make up a secret, e.g., `my-secret-key-123`)
+6. Choose **Free** instance type
+7. Pick region: **Frankfurt** or **Washington DC**
+8. Click **Deploy**
+
+**Set up daily sync with cron-job.org (free):**
+1. Go to [cron-job.org](https://cron-job.org/) and create an account
+2. Create a new cron job:
+   - URL: `https://YOUR-APP.koyeb.app/cron/sync?key=YOUR_CRON_SECRET`
+   - Schedule: Daily at 10:00 (or whenever you prefer)
+3. Save — your mixes will sync daily!
+
+### Option 2: Railway (~$5/month)
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.com/deploy/stunning-inspiration)
 
-**Cost:** ~$5/month on Railway (Hobby plan)
+**Cost:** ~$5/month on Railway (Hobby plan) — always-on, no external cron needed
 
 1. Click "Deploy on Railway" above
 2. Wait for deployment to complete
@@ -43,7 +65,7 @@ A **self-service tool** for non-technical users:
 
 **Updating Railway:** Click on your service → **Settings** → **Source** → **Check for updates**
 
-### Option 2: Docker Compose (self-hosted)
+### Option 3: Docker Compose (self-hosted)
 
 Download [`docker-compose.yml`](https://github.com/muness/tidal-dd/blob/main/docker-compose.yml):
 

@@ -541,6 +541,16 @@ async def status_page(request: Request):
     return HTMLResponse(html)
 
 
+@app.get("/cron/sync")
+async def cron_sync(key: str = None):
+    """Secret-key endpoint for external cron services (e.g., cron-job.org)."""
+    cron_key = os.getenv("CRON_SECRET")
+    if not cron_key or key != cron_key:
+        return {"error": "Unauthorized"}, 401
+    result = perform_sync(trigger="cron")
+    return {"status": "ok", "result": result}
+
+
 @app.get("/sync", response_class=HTMLResponse)
 async def sync(request: Request):
     cookie_pin = request.cookies.get(AUTH_COOKIE)

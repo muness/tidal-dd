@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: tidal-dd
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: PORT
+        value: "10000"
+      - key: CRON_SECRET
+        generateValue: true
+    disk:
+      name: tidal-data
+      mountPath: /data
+      sizeGB: 1
