@@ -9,3 +9,6 @@ __pycache__/
 # Tidal session (contains OAuth tokens)
 session.json
 .tidal-sessions/
+
+# Data directory (contains tokens, config, PIN)
+data/
